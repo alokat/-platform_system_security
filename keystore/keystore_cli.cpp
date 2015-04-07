@@ -14,16 +14,15 @@
  * limitations under the License.
  */
 
+#include <sys/types.h>
+#include <binder/IPCThreadState.h>
+#include <binder/IServiceManager.h>
+#include <keystore/IKeystoreService.h>
+#include <keystore/keystore.h>
+
 #include <stdio.h>
 #include <stdint.h>
 #include <string.h>
-#include <sys/types.h>
-
-#include <keystore/IKeystoreService.h>
-#include <binder/IPCThreadState.h>
-#include <binder/IServiceManager.h>
-
-#include <keystore/keystore.h>
 
 using namespace android;
 
@@ -44,113 +43,36 @@ static const char* responses[] = {
     /* [WRONG_PASSWORD + 3] = */ "Wrong password (4 tries left)",
 };
 
-#define NO_ARG_INT_RETURN(cmd) \
-    do { \
-        if (strcmp(argv[1], #cmd) == 0) { \
-            int32_t ret = service->cmd(); \
-            if (ret < 0) { \
-                fprintf(stderr, "%s: could not connect: %d\n", argv[0], ret); \
-                return 1; \
-            } else { \
-                printf(#cmd ": %s (%d)\n", responses[ret], ret); \
-                return 0; \
-            } \
-        } \
-    } while (0)
+static void
+usage(const char *msg) {
+    
+    extern char *__progname;
+    if (msg)
+        fprintf(stderr, "%s", msg);
+    
+    fprintf(stderr, "usage"
+                    "\t%1$s test"
+                    "\t%1$s get <key>"
+                    "\t%1$s insert <key> <value>"
+                    "\t%1$s del"
+                    "\t%1$s exist"
+                    "\t%1$s saw"
+                    "\t%1$s reset"
+                    "\t%1$s password"
+                    "\t%1$s lock"
+                    "\t%1$s unlock"
+                    "\t%1$s zero",
+        __progname);
+        exit(1);
+}
 
-#define SINGLE_ARG_INT_RETURN(cmd) \
-    do { \
-        if (strcmp(argv[1], #cmd) == 0) { \
-            if (argc < 3) { \
-                fprintf(stderr, "Usage: %s " #cmd " <name>\n", argv[0]); \
-                return 1; \
-            } \
-            int32_t ret = service->cmd(String16(argv[2])); \
-            if (ret < 0) { \
-                fprintf(stderr, "%s: could not connect: %d\n", argv[0], ret); \
-                return 1; \
-            } else { \
-                printf(#cmd ": %s (%d)\n", responses[ret], ret); \
-                return 0; \
-            } \
-        } \
-    } while (0)
-
-#define SINGLE_ARG_PLUS_UID_INT_RETURN(cmd) \
-    do { \
-        if (strcmp(argv[1], #cmd) == 0) { \
-            if (argc < 3) { \
-                fprintf(stderr, "Usage: %s " #cmd " <name> <uid>\n", argv[0]); \
-                return 1; \
-            } \
-            int uid = -1; \
-            if (argc > 3) { \
-                uid = atoi(argv[3]); \
-                fprintf(stderr, "Running as uid %d\n", uid); \
-            } \
-            int32_t ret = service->cmd(String16(argv[2]), uid); \
-            if (ret < 0) { \
-                fprintf(stderr, "%s: could not connect: %d\n", argv[0], ret); \
-                return 1; \
-            } else { \
-                printf(#cmd ": %s (%d)\n", responses[ret], ret); \
-                return 0; \
-            } \
-        } \
-    } while (0)
-
-#define STING_ARG_DATA_STDIN_INT_RETURN(cmd) \
-    do { \
-        if (strcmp(argv[1], #cmd) == 0) { \
-            if (argc < 3) { \
-                fprintf(stderr, "Usage: %s " #cmd " <name>\n", argv[0]); \
-                return 1; \
-            } \
-            uint8_t* data; \
-            size_t dataSize; \
-            read_input(&data, &dataSize); \
-            int32_t ret = service->cmd(String16(argv[2]), data, dataSize); \
-            if (ret < 0) { \
-                fprintf(stderr, "%s: could not connect: %d\n", argv[0], ret); \
-                return 1; \
-            } else { \
-                printf(#cmd ": %s (%d)\n", responses[ret], ret); \
-                return 0; \
-            } \
-        } \
-    } while (0)
-
-#define SINGLE_ARG_DATA_RETURN(cmd) \
-    do { \
-        if (strcmp(argv[1], #cmd) == 0) { \
-            if (argc < 3) { \
-                fprintf(stderr, "Usage: %s " #cmd " <name>\n", argv[0]); \
-                return 1; \
-            } \
-            uint8_t* data; \
-            size_t dataSize; \
-            int32_t ret = service->cmd(String16(argv[2]), &data, &dataSize); \
-            if (ret < 0) { \
-                fprintf(stderr, "%s: could not connect: %d\n", argv[0], ret); \
-                return 1; \
-            } else if (ret != ::NO_ERROR) { \
-                fprintf(stderr, "%s: " #cmd ": %s (%d)\n", argv[0], responses[ret], ret); \
-                return 1; \
-            } else { \
-                fwrite(data, dataSize, 1, stdout); \
-                fflush(stdout); \
-                free(data); \
-                return 0; \
-            } \
-        } \
-    } while (0)
-
-static int saw(sp<IKeystoreService> service, const String16& name, int uid) {
+static int
+saw(sp<IKeystoreService> service, const String16& name, int uid) {
     Vector<String16> matches;
     int32_t ret = service->saw(name, uid, &matches);
     if (ret < 0) {
-        fprintf(stderr, "saw: could not connect: %d\n", ret);
-        return 1;
+        usage("could not connect to keystor service");
+        /* NOTREACHED */
     } else if (ret != ::NO_ERROR) {
         fprintf(stderr, "saw: %s (%d)\n", responses[ret], ret);
         return 1;
@@ -159,8 +81,8 @@ static int saw(sp<IKeystoreService> service, const String16& name, int uid) {
         for (; it != matches.end(); ++it) {
             printf("%s\n", String8(*it).string());
         }
-        return 0;
     }
+    return 0;
 }
 
 int main(int argc, char* argv[])
@@ -183,42 +105,187 @@ int main(int argc, char* argv[])
      * All the commands should return a value
      */
 
-    NO_ARG_INT_RETURN(test);
+    if (strcmp(argv[1], "test") == 0) {
+        int32_t ret = service->test();
+        if (ret < 0) {
+            usage("could not connect to keystore service");
+            /* NOTREACHED */
+        } else {
+            printf(": %s (%d)\n", responses[ret], ret);
+            return 0;
+        }
+    }
 
-    SINGLE_ARG_DATA_RETURN(get);
+    if (strcmp(argv[1], "get") == 0) {
+        if (argc < 3) {
+            usage(NULL);
+            /* NOTREACHED */
+        }
+        uint8_t* data;
+        size_t dataSize;
+        int32_t ret = service->get(String16(argv[2]), &data, &dataSize);
+        if (ret < 0) {
+            fprintf(stderr, "%s: could not connect: %d\n", argv[0], ret);
+            return 1;
+        } else if (ret != ::NO_ERROR) {
+            fprintf(stderr, "%s: : %s (%d)\n", argv[0], responses[ret], ret);
+            return 1;
+        } else {
+            fwrite(data, dataSize, 1, stdout);
+            fflush(stdout);
+            free(data);
+            return 0;
+        }
+    }
+                
+    if (strcmp(argv[1], "del") == 0) {
+        if (argc < 3) {
+            usage(NULL);
+            /* NOTREACHED */
+        }
+        int uid = -1;
+        if (argc > 3) {
+            uid = atoi(argv[3]);
+            fprintf(stderr, "Running as uid %d\n", uid);
+        }
+        int32_t ret = service->del(String16(argv[2]), uid);
+        if (ret < 0) {
+            fprintf(stderr, "%s: could not connect: %d\n", argv[0], ret);
+            return 1;
+        } else {
+            printf(": %s (%d)\n", responses[ret], ret);
+            return 0;
+        }
+    }
 
-    // TODO: insert
-
-    SINGLE_ARG_PLUS_UID_INT_RETURN(del);
-
-    SINGLE_ARG_PLUS_UID_INT_RETURN(exist);
+    if (strcmp(argv[1], "exit") == 0) {
+        if (argc < 3) {
+            usage(NULL);
+            /* NOTREACHED */
+        }
+        int uid = -1;
+        if (argc > 3) {
+            uid = atoi(argv[3]);
+            fprintf(stderr, "Running as uid %d\n", uid);
+        }
+        int32_t ret = service->exist(String16(argv[2]), uid);
+        if (ret < 0) {
+            fprintf(stderr, "%s: could not connect: %d\n", argv[0], ret);
+            return 1;
+        } else {
+            printf(": %s (%d)\n", responses[ret], ret);
+            return 0;
+        }
+    }
 
     if (strcmp(argv[1], "saw") == 0) {
         return saw(service, argc < 3 ? String16("") : String16(argv[2]),
                 argc < 4 ? -1 : atoi(argv[3]));
     }
 
-    NO_ARG_INT_RETURN(reset);
+    if (strcmp(argv[1], "reset") == 0) {
+        int32_t ret = service->reset();
+        if (ret < 0) {
+            usage("could not connect to keystore service");
+            /* NOTREACHED */
+        } else {
+            printf(": %s (%d)\n", responses[ret], ret);
+            return 0;
+        }
+    }
 
-    SINGLE_ARG_INT_RETURN(password);
+    if (strcmp(argv[1], "password") == 0) {
+        if (argc < 3) {
+            usage(NULL);
+            /* NOTREACHED */
+        }
+        int32_t ret = service->password(String16(argv[2]));
+        if (ret < 0) {
+            fprintf(stderr, "%s: could not connect: %d\n", argv[0], ret);
+            return 1;
+        } else {
+            printf(": %s (%d)\n", responses[ret], ret);
+            return 0;
+        }
+    }
 
-    NO_ARG_INT_RETURN(lock);
+    if (strcmp(argv[1], "lock") == 0) {
+        int32_t ret = service->lock();
+        if (ret < 0) {
+            usage("could not connect to keystore service");
+            /* NOTREACHED */
+        } else {
+            printf(": %s (%d)\n", responses[ret], ret);
+            return 0;
+        }
+    }
 
-    SINGLE_ARG_INT_RETURN(unlock);
+    if (strcmp(argv[1], "unlock") == 0) {
+        if (argc < 3) {
+            usage(NULL);
+            /* NOTREACHED */
+        }
+        int32_t ret = service->unlock(String16(argv[2]));
+        if (ret < 0) {
+            fprintf(stderr, "%s: could not connect: %d\n", argv[0], ret);
+            return 1;
+        } else {
+            printf(": %s (%d)\n", responses[ret], ret);
+            return 0;
+        }
+    }
 
-    NO_ARG_INT_RETURN(zero);
+    if (strcmp(argv[1], "zero") == 0) {
+        int32_t ret = service->zero();
+        if (ret < 0) {
+            usage("could not connect to keystore service");
+            /* NOTREACHED */
+        } else {
+            printf(": %s (%d)\n", responses[ret], ret);
+            return 0;
+        }
+    }
 
-    // TODO: generate
-
-    SINGLE_ARG_DATA_RETURN(get_pubkey);
-
-    SINGLE_ARG_PLUS_UID_INT_RETURN(del_key);
-
-    // TODO: grant
-
-    // TODO: ungrant
-
-    // TODO: getmtime
+    if (strcmp(argv[1], "get_pubkey") == 0) {
+        if (argc < 3) {
+            usage(NULL);
+            /* NOTREACHED */
+        }
+        uint8_t* data;
+        size_t dataSize;
+        int32_t ret = service->get_pubkey(String16(argv[2]), &data, &dataSize);
+        if (ret < 0) {
+            fprintf(stderr, "%s: could not connect: %d\n", argv[0], ret);
+            return 1;
+        } else if (ret != ::NO_ERROR) {
+            fprintf(stderr, "%s: : %s (%d)\n", argv[0], responses[ret], ret);
+            return 1;
+        } else {
+            fwrite(data, dataSize, 1, stdout);
+            fflush(stdout);
+            free(data);
+            return 0;
+        }
+    }
+    if (strcmp(argv[1], "del_key") == 0) {
+        if (argc < 3) {
+            usage(NULL);
+            /* NOTREACHED */
+        }
+        int uid = -1;
+        if (argc > 3) {
+            uid = atoi(argv[3]);
+            fprintf(stderr, "Running as uid %d\n", uid);
+        }
+        int32_t ret = service->del_key(String16(argv[2]), uid);
+        if (ret < 0) {
+            fprintf(stderr, "%s: could not connect: %d\n", argv[0], ret);
+            return 1;
+        } else {
+            printf(": %s (%d)\n", responses[ret], ret);
+            return 0;
+        }
+    }
 
     fprintf(stderr, "%s: unknown command: %s\n", argv[0], argv[1]);
     return 1;
